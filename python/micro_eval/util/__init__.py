@@ -10,21 +10,20 @@ import typing
 import numpy as np
 
 import tvm
-import topi
+from tvm import topi
 from tvm import autotvm, relay
 import tvm.micro as micro
-from tvm.micro import create_micro_mod
-from tvm.contrib import graph_runtime, util, download
+from tvm.contrib import graph_runtime, download
 from tvm.contrib.debugger import debug_runtime
 
-from topi.util import get_const_tuple
-from topi.nn.util import get_const_int, get_pad_tuple
-from topi.nn.conv2d import conv2d, conv2d_nchw
-from topi.generic import schedule_conv2d_nchw, schedule_conv2d_nhwc
-from topi.nn.pad import pad
-from topi.nn.util import get_pad_tuple
-from topi.util import simplify, get_const_tuple, traverse_inline
-from topi.testing import conv2d_nchw_python
+from tvm.topi.utils import get_const_int, get_const_tuple
+from tvm.topi.utils import simplify, traverse_inline
+from tvm.topi.nn.utils import get_pad_tuple
+from tvm.topi.nn.conv2d import conv2d, conv2d_nchw
+from tvm.topi.generic import schedule_conv2d_nchw, schedule_conv2d_nhwc
+from tvm.topi.nn.pad import pad
+from tvm.topi.testing import conv2d_nchw_python
+
 
 REPO_ROOT = None
 def get_repo_root():
@@ -33,6 +32,10 @@ def get_repo_root():
         REPO_ROOT = str(subprocess.check_output(['git', 'rev-parse', '--show-toplevel'],
                                                 cwd=os.path.dirname(__file__)), 'utf-8').strip('\n')
     return REPO_ROOT
+
+
+def get_zephyr_project_root():
+    return os.path.join(get_repo_root(), 'runtimes', 'zephyr')
 
 
 CMSIS_NN_PATH = f'{get_repo_root()}/3rdparty/CMSIS_5'
@@ -309,26 +312,6 @@ end
 print_utvm_args
 """)
         f.write(gdbinit_contents)
-
-
-def get_comm_overhead(dev_config, num_trials=1):
-    """Get communication overhead by executing an empty kernel."""
-    class EmptyCMod:
-        def __init__(self):
-            pass
-
-        def export_library(self, out_obj_path, fcompile=None):
-            assert fcompile is not None
-            fcompile(out_obj_path, f'{os.path.dirname(__file__)}/empty.c')
-
-    # do multiple trials, then calc the average comm overhead
-    results = []
-    with micro.Session(dev_config) as sess:
-        micro_mod = create_micro_mod(EmptyCMod(), dev_config)
-        micro_func = micro_mod['empty']
-        for _ in range(num_trials):
-            results.append(benchmark_micro_func(sess, micro_func, [], 1, 0.0))
-    return sum(results) / len(results)
 
 
 def benchmark_micro_func(sess, micro_func, args, num_trials):

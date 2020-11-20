@@ -91,8 +91,7 @@ class TunableModel(metaclass=abc.ABCMeta):
     raise NotImplementedError()
 
   @abc.abstractmethod
-  def lower_model(self, compiled_model : CompiledModel,
-                  dev_config : typing.Optional[typing.Dict] = None) -> LoweredModule:
+  def lower_model(self, compiled_model : CompiledModel) -> LoweredModule:
     """Lower the Relay IRModule into the target instruction set.
 
     Params
@@ -108,6 +107,18 @@ class TunableModel(metaclass=abc.ABCMeta):
     -------
     LoweredModule :
         Loadable module, graph, and params for the target.
+    """
+    raise NotImplementedError()
+
+  @abc.abstractmethod
+  def get_micro_compiler_opts(self):
+    """Return suitable compiler options (i.e. from tvm.micro.default_options()) for micro_dev.
+
+    Returns
+    -------
+    dict :
+        A dict containing 'lib_opts' and 'bin_opts' keys. Suitable for passing as kwargs to
+        tvm.micro.build_static_runtime().
     """
     raise NotImplementedError()
 
@@ -160,35 +171,6 @@ class TunableModel(metaclass=abc.ABCMeta):
     raise NotImplementedError()
 
   @abc.abstractmethod
-  def section_constraints(self, task_index_and_task :
-                          typing.Tuple[int, tvm.autotvm.task.Task]=None) -> collections.OrderedDict:
-    """Return the section_constraints= argument to tvm.micro.device.abc.generate_config.
-
-    Params
-    ------
-    task_index : Optional[(int, Task)]
-        If given, a tuple containing the index of the task to be tuned and the Task instance itself.
-        Needed for now due to split memory allocation between TVM RPC Server and device.
-
-    Returns
-    -------
-    collections.OrderedDict :
-        The section constraints. An example:
-            OrderedDict([
-                ('text', (28000, MemConstraint.ABSOLUTE_BYTES)),
-                ('rodata', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('data', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('bss', (800, MemConstraint.ABSOLUTE_BYTES)),
-                ('args', (4096, MemConstraint.ABSOLUTE_BYTES)),
-                ('heap', (100.0, MemConstraint.WEIGHT)),
-                ('workspace', (100000, MemConstraint.ABSOLUTE_BYTES)),
-                ('stack', (128, MemConstraint.ABSOLUTE_BYTES)),
-            ])
-
-    """
-    raise NotImplementedError()
-
-  @abc.abstractmethod
   def dataset_generator_name(self) -> str:
     """Return the canonical name of the DatasetGenerator subclass for this model."""
     raise NotImplementedError()
@@ -234,7 +216,7 @@ class TunableModel(metaclass=abc.ABCMeta):
 
 
 SETTING_TO_TARGET_AND_CONTEXT = {
-  'micro_dev': ('c -device=micro_dev', 'micro_dev'),
+  'micro_dev': ('c -keys=arm_cpu -mcpu=cortex-m7 -link-params -model=stm32f746xx -runtime=c -system-lib=1', 'micro_dev'),
   'interp': ('llvm', 'cpu'),
   'cpu': ('llvm', 'cpu'),
 }

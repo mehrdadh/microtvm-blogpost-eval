@@ -16,11 +16,10 @@ import tvm
 from tvm import autotvm
 from tvm.autotvm.task.space import FallbackConfigEntity
 from tvm.contrib import graph_runtime
-from tvm.contrib import util as contrib_util
+from tvm.contrib.debugger import debug_runtime
+from tvm.contrib import utils as contrib_utils
 import tvm.micro
-from tvm.micro.device.arm import stm32f746xx
-from tvm.micro.device import MemConstraint
-
+from tvm.micro.contrib import zephyr
 
 from micro_eval import dataset
 from micro_eval import model
@@ -77,7 +76,7 @@ def adapt_all_outputs(model_inst, graph_mod, sample):
     return model_inst.adapt_model_outputs(results)
 
 
-def eval_interp(args, transport_launcher, model_inst, compiled_model, samples):
+def eval_interp(args, model_inst, compiled_model, samples):
     assert hasattr(model_inst, 'interp_lower_config'), (
         'HACK: for now, models run under the interpreter need an attribute "interp_lower_config", '
         'which is tvm.transform.PassContext() used to evaluate the IRModule')
@@ -107,16 +106,18 @@ def eval_interp(args, transport_launcher, model_inst, compiled_model, samples):
     return results
 
 
-def eval_cpu(args, transport_launcher, model_inst, compiled_model, samples):
+def eval_cpu(args, model_inst, compiled_model, samples):
     lowered = model_inst.lower_model(compiled_model)
     if args.use_debug_runtime:
-        graph_mod = tvm.contrib.debugger.debug_runtime.create(
-            lowered.graph, lowered.mod, tvm.cpu(0),
+        graph_mod = debug_runtime.GraphModuleDebug(
+            lowered.module["debug_create"]("default", tvm.cpu(0)),
+            [tvm.cpu(0)], lowered.get_json(),
             dump_root=f'{util.get_repo_root()}/debug/cpu')
+        print('graph mod', graph_mod)
     else:
-        graph_mod = tvm.contrib.graph_runtime.create(
-            lowered.graph, lowered.mod, tvm.cpu(0))
+        graph_mod = tvm.contrib.graph_runtime.GraphModule(lowered["default"](tvm.cpu(0)))
 
+    print('graph mod', lowered, graph_mod)
     graph_mod.set_input(**lowered.params)
 
     results = []
@@ -135,40 +136,70 @@ def eval_cpu(args, transport_launcher, model_inst, compiled_model, samples):
     return results
 
 
-def _launch_gdb():
-    print('')
-    print('Launch gdb in another terminal:')
-    print(f'cd {util.get_repo_root()}/debug/micro && arm-none-eabi-gdb')
-    print('')
-    print('Press [Enter] when finished')
-    input()
+MICRO_WORKSPACE = None
 
 
-def eval_micro_dev(args, transport_launcher, model_inst, compiled_model, samples):
-    if args.openocd_server_hostport:
-        openocd_host, openocd_port = args.openocd_server_hostport.rsplit(':', 1)
-        openocd_port = int(openocd_port)
-    else:
-        openocd_host, openocd_port = transport_launcher.openocd_host_port_tuple(0)
+def get_micro_workspace():
+    global MICRO_WORKSPACE
+    if MICRO_WORKSPACE is None:
+        MICRO_WORKSPACE = tvm.micro.Workspace(debug=True)
 
-    config = stm32f746xx.generate_config(
-            openocd_host, openocd_port, model_inst.section_constraints())
-    if args.debug_micro_execution:
-        config['debug_func'] = _launch_gdb
+    return MICRO_WORKSPACE
 
-    util.reset_gdbinit(config)
-    with tvm.micro.Session(config) as sess:
+
+@contextlib.contextmanager
+def connect_debug_shell(*args):
+    session = tvm.rpc.connect(*args)
+    yield session
+    del session
+
+
+def eval_micro_dev(args, model_inst, compiled_model, samples):
+    opts = model_inst.get_micro_compiler_opts()
+    opts['lib_opts']['cmake_args'] = ['-DCMAKE_VERBOSE_MAKEFILE=1']
+    print('opts', opts['lib_opts']['include_dirs'])
+    compiler = zephyr.ZephyrCompiler(util.get_zephyr_project_root(),
+                                     board=args.zephyr_board,
+                                     zephyr_toolchain_variant='zephyr')
+    lowered = model_inst.lower_model(compiled_model)
+    print('lowered', lowered.lib)
+    micro_bin = tvm.micro.build_static_runtime(
+        get_micro_workspace(), compiler, lowered.lib, **opts)
+
+    with contextlib.ExitStack() as with_stack:
+        debug_session = None
+        if args.debug_micro_execution:
+            hostport = args.microtvm_debug_shell_hostport.rsplit(':', 1)
+            debug_session = with_stack.enter_context(
+                connect_debug_shell(hostport[0], int(hostport[1])))
+
+        sess = with_stack.enter_context(
+            tvm.micro.Session(binary=micro_bin, flasher=compiler.flasher(debug_rpc_session=debug_session)))
+
         _LOG.debug('[Executing]')
-        lowered = model_inst.lower_model(compiled_model, dev_config=config)
-        ctx = tvm.micro_dev(0)
+        ctx = sess.context
+        print('JSON!!!')
+        print(lowered.get_json())
+        print('END JSON!!!')
         if args.use_debug_runtime:
-            mod = tvm.contrib.debugger.debug_runtime.create(
-                lowered.graph, lowered.mod, ctx,
+            mod = tvm.micro.create_local_debug_runtime(
+                lowered.get_json(), sess.get_system_lib(), ctx,
                 dump_root=f'{util.get_repo_root()}/debug/micro')
         else:
-            mod = graph_runtime.create(lowered.graph, lowered.mod, ctx)
+            mod = tvm.micro.create_local_graph_runtime(
+                lowered.get_json(), sess.get_system_lib(), ctx)
 
-        mod.set_input(**lowered.params)
+#        total_bytes = 0
+#        for k, v in lowered.params.items():
+#            num_bytes = np.prod(v.shape) * 4
+#            _LOG.info('input %s (%r): %d bytes', k, v.shape, num_bytes)
+#            total_bytes += num_bytes
+
+#        _LOG.info("total bytes: %d", total_bytes)
+
+#        for k, v in lowered.params.items():
+#            _LOG.info('set input %s', k)
+#            mod.set_input(k, v)
 
         results = []
         for i, sample in enumerate(samples):
@@ -176,13 +207,17 @@ def eval_micro_dev(args, transport_launcher, model_inst, compiled_model, samples
                 model_inst, sample,
                 compiled_model.ir_mod[compiled_model.entry_point])
 
+            print('SET INPUT')
             mod.set_input(**inputs)
+            print('SYNC')
             ctx.sync()  # Ensure all args have been pushed to the device.
-            sess.get_last_batch_time()  # Flush last batch time.
+            print('RUN')
             mod.run()
+            print('SYNC')
             ctx.sync()   # This actually executes the on-device task queue.
+            print('SET OUTPUT')
             results.append(adapt_all_outputs(model_inst, mod, sample))
-            exec_time_ms = sess.get_last_batch_time()
+            exec_time_ms = 100
             _LOG.info('got prediction after %.3f ms: %r', exec_time_ms, results[-1])
 
     return results
@@ -230,6 +265,8 @@ def parse_args():
                               '. <config> is the path to a JSON file containing tweaks to the '
                               'built module.'))
     parser.add_argument('--num-samples', type=int, default=10, help='number of image samples to try')
+    parser.add_argument('--log-level', type=lambda s: getattr(logging, s.upper()),
+                        default=logging.INFO, help='Default global log level')
     parser.add_argument('--use-tuned-schedule',
                         nargs='?',
                         const=USE_DEFAULT_TUNED_SCHEDULE,
@@ -243,9 +280,13 @@ def parse_args():
                         help=('If specified, tell OpenOCD to use the device with this specific '
                               'serial number. Must match the "hla_serial" key in the environment '
                               'config.'))
-    parser.add_argument('--openocd-server-hostport',
-                        help=('Address of the OpenOCD TCL server to use for device communication. '
-                              'NOTE: you might need to choose an IPv4 address (i.e. 127.0.0.1) '
+    parser.add_argument('--microtvm-debug-shell-hostport',
+                        default='127.0.0.1:9090',
+                        help=('Address of an instance of the tvm.exec.microtvm_debug_shell module. '
+                              'You might need to specify this option if using '
+                              '--debug-micro-execution, and you need to run microtvm_debug_shell '
+                              'on a different hostport than usual. NOTE: on some platforms e.g. '
+                              'OS X, you might need to choose an IPv4 address (i.e. 127.0.0.1) '
                               'here.'))
     parser.add_argument('--use-debug-runtime', action='store_true',
                         help=("Use debug runtime and print graph debugging info. This option is "
@@ -258,6 +299,8 @@ def parse_args():
 
     parser.add_argument('--validate-against', const='cpu', nargs='?',
                         help='Validate on-device output against the given runtime (by default, cpu)')
+    parser.add_argument('--zephyr-board', default='nucleo_f746zg',
+                        help='Name of the Zephyr board to use for micro_dev inference.')
     model_util.define_cifar10_conv_op_impl(parser)
     return parser.parse_args()
 
@@ -265,7 +308,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    log_util.config(['eval', '-'.join(args.model_specs)])
+    log_util.config(['eval', '-'.join(args.model_specs)], level=args.log_level)
 
     model_inst_setting = collections.OrderedDict()
     for spec in args.model_specs:
@@ -288,14 +331,6 @@ def main():
     dataset_gen = dataset.DatasetGenerator.instantiate(
         dataset_generator_name, {'shuffle': not validate_against})
 
-    transport_launcher = None
-    if (not args.openocd_server_hostport and
-        any(setting == 'micro_dev' for _, setting in model_inst_setting.values())):
-        run_options = {'use_tracker': False, 'num_instances': 1}
-        if args.device_serial_number:
-            run_options['hla_serials'] = [args.device_serial_number]
-        transport_launcher = device_util.DeviceTransportLauncher(run_options)
-
     util.DEBUG_MODE = args.use_debug_runtime
 
     samples = dataset_gen.generate(args.num_samples)
@@ -303,18 +338,13 @@ def main():
     with contextlib.ExitStack() as all_models_stack:
         if args.debug_micro_execution:
             _LOG.warn('NOTE: to debug micro execution, compiled object files will be left in your '
-                      'temp directory at: %s', contrib_util.TempDirectory._DEBUG_PARENT_DIR)
+                      'temp directory at: %s', contrib_utils.TempDirectory._DEBUG_PARENT_DIR)
             _LOG.warn('This is a limitation of the current microTVM compilation structure')
 
-            all_models_stack.enter_context(contrib_util.TempDirectory.set_keep_for_debug())
+            all_models_stack.enter_context(contrib_utils.TempDirectory.set_keep_for_debug())
 
         for spec, (model_inst, setting) in model_inst_setting.items():
             with contextlib.ExitStack() as model_stack:
-                if transport_launcher is not None:
-                    model_stack.enter_context(transport_launcher.launch(
-                        stm32f746xx.generate_config,
-                        {'section_constraints': model_inst.section_constraints()}))
-
                 if args.use_tuned_schedule:
                     if args.use_tuned_schedule == USE_DEFAULT_TUNED_SCHEDULE:
                         tuned_schedule = autotvm_log_util.get_default_log_path(
@@ -331,8 +361,7 @@ def main():
                         model_stack.enter_context(autotvm.apply_history_best(tuned_schedule))
 
                 compiled = model_inst.build_model()
-                results[spec] = globals()[f'eval_{setting}'](
-                    args, transport_launcher, model_inst, compiled, samples)
+                results[spec] = globals()[f'eval_{setting}'](args, model_inst, compiled, samples)
 
     if args.validate_against:
         for i in range(args.num_samples):

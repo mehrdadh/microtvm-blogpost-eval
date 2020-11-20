@@ -1,12 +1,13 @@
 import collections
+import copy
 import json
 import logging
+import os
 import numpy as np
 
 import tvm
 import tvm.relay
 import tvm.micro
-from tvm.micro.device import MemConstraint
 
 from micro_eval import util
 from . import CompiledModel, LoweredModule, TunableModel
@@ -24,6 +25,7 @@ INCLUDE_PATHS = [
     f'{util.CMSIS_NN_PATH}/CMSIS/DSP/Include',
     f'{util.CMSIS_NN_PATH}/CMSIS/NN/Include',
     f'{util.CMSIS_ST_PATH}',
+    '/home/vagrant/zephyr/modules/hal/cmsis/CMSIS/Core/Include',
 ]
 
 CIFAR10_CLASSES = ['Plane', 'Car', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
@@ -140,29 +142,22 @@ class Cifar10Cnn(TunableModel):
 
     def _lower_cpu(self, compiled_model):
         with tvm.transform.PassContext(opt_level=3, disabled_pass={"AlterOpLayout"}):
-            return LoweredModule(*tvm.relay.build(compiled_model.ir_mod[compiled_model.entry_point],
-                                                  target="llvm", params=compiled_model.params))
+            return tvm.relay.build(compiled_model.ir_mod[compiled_model.entry_point],
+                                   target="llvm", params=compiled_model.params)
 
-    def _lower_micro_dev(self, compiled_model, dev_config):
+    def _lower_micro_dev(self, compiled_model):
         with tvm.transform.PassContext(opt_level=3, config={'tir.disable_vectorize': True}):
-            graph, c_mod, params = tvm.relay.build(
+            return tvm.relay.build(
                 compiled_model.ir_mod[compiled_model.entry_point], target=self.target,
                 params=compiled_model.params)
 
-        _LOG.info('Building C module and programming on device...')
-        micro_mod = tvm.micro.create_micro_mod(
-            c_mod, dev_config, lib_headers=HEADERS, lib_include_paths=INCLUDE_PATHS)
-
-        return LoweredModule(graph, micro_mod, params)
-
-    def lower_model(self, compiled_model, dev_config=None):
+    def lower_model(self, compiled_model):
         # Normally we would examine target to determine how to lower, but target does not currently
         # adequately describe the runtime environment.
         if self.ctx_str == 'cpu':
             return self._lower_cpu(compiled_model)
         elif self.ctx_str == 'micro_dev':
-            assert dev_config is not None, 'dev_config required to lower for micro_dev'
-            return self._lower_micro_dev(compiled_model, dev_config)
+            return self._lower_micro_dev(compiled_model)
         else:
             assert False, f"don't know how to lower for context {self.ctx_str}"
 
@@ -210,7 +205,7 @@ class Cifar10Cnn(TunableModel):
         param_args = ',\n'.join(params)
         _LOG.debug('params %s', param_args)
 
-        mod = tvm.relay.fromtext(CIFAR10_RELAY_MODEL.format(
+        mod = tvm.parser.parse(CIFAR10_RELAY_MODEL.format(
             bias_add_axis=bias_add_axis,
             data_layout=self.DATA_LAYOUT,
             kernel_layouts=kernel_layouts,
@@ -224,6 +219,15 @@ class Cifar10Cnn(TunableModel):
             self.target, mod, params, 'main',
             {'data_layout': self.DATA_LAYOUT, 'kernel_layouts': kernel_layouts})
 
+    def get_micro_compiler_opts(self):
+        opts = tvm.micro.default_options(os.path.join(util.get_zephyr_project_root(), 'crt'))
+        opts['lib_opts']['include_dirs'] += INCLUDE_PATHS
+#        opts['bin_opts']['include_dirs'] += INCLUDE_PATHS
+        opts['generated_lib_opts'] = copy.copy(tvm.micro.build._CRT_GENERATED_LIB_OPTIONS)
+        opts['generated_lib_opts']['include_dirs'] += INCLUDE_PATHS
+        opts['generated_lib_opts']['cflags'] += ['-Wno-error=strict-aliasing']
+        return opts
+
     def extract_tunable_tasks(self, compiled_model):
         with tvm.transform.PassContext(opt_level=3, config={'tir.disable_vectorize': True}):
             tasks = tvm.autotvm.task.extract_from_program(
@@ -231,7 +235,6 @@ class Cifar10Cnn(TunableModel):
                 compiled_model.params,
                 self.target)
 
-        print('tasks', tasks)
         assert len(tasks) == 3
         return tasks
 
@@ -255,51 +258,8 @@ class Cifar10Cnn(TunableModel):
     def get_config_str(self):
         return '-'.join(self._kernel_layouts)
 
-    WORKSPACE_SIZE_BYTES_BY_TASK_INDEX = [132000, 132000, 10000]
-
     def dataset_generator_name(self):
         return 'cifar10'
-
-    def section_constraints(self, task_index_and_task=None):
-        if task_index_and_task is None:
-            return collections.OrderedDict([
-                ('text', (23000, MemConstraint.ABSOLUTE_BYTES)),
-                ('rodata', (300, MemConstraint.ABSOLUTE_BYTES)),
-                ('data', (0x80, MemConstraint.ABSOLUTE_BYTES)),
-                ('bss', (820, MemConstraint.ABSOLUTE_BYTES)),
-                ('args', (4496, MemConstraint.ABSOLUTE_BYTES)),
-                ('heap', (100.0, MemConstraint.WEIGHT)),
-                ('workspace', (145000, MemConstraint.ABSOLUTE_BYTES)),
-                ('stack', (128, MemConstraint.ABSOLUTE_BYTES)),
-            ])
-
-        task_index, task = task_index_and_task
-        if task.name == 'conv2d_direct.arm_cpu':
-            return collections.OrderedDict([
-                ('text', (28000, MemConstraint.ABSOLUTE_BYTES)),
-                ('rodata', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('data', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('bss', (800, MemConstraint.ABSOLUTE_BYTES)),
-                ('args', (4096, MemConstraint.ABSOLUTE_BYTES)),
-                ('heap', (100.0, MemConstraint.WEIGHT)),
-                ('workspace', (self.WORKSPACE_SIZE_BYTES_BY_TASK_INDEX[task_index],
-                               MemConstraint.ABSOLUTE_BYTES)),
-                ('stack', (128, MemConstraint.ABSOLUTE_BYTES)),
-            ])
-        elif task.name == 'conv2d_direct_simd.arm_cpu':
-            return collections.OrderedDict([
-                ('text', (23000, MemConstraint.ABSOLUTE_BYTES)),
-                ('rodata', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('data', (100, MemConstraint.ABSOLUTE_BYTES)),
-                ('bss', (800, MemConstraint.ABSOLUTE_BYTES)),
-                ('args', (4096, MemConstraint.ABSOLUTE_BYTES)),
-                ('heap', (100.0, MemConstraint.WEIGHT)),
-                ('workspace', (self.WORKSPACE_SIZE_BYTES_BY_TASK_INDEX[task_index],
-                               MemConstraint.ABSOLUTE_BYTES)),
-                ('stack', (128, MemConstraint.ABSOLUTE_BYTES)),
-            ])
-        else:
-            assert False, f"don't know how to generate section constraints for {task.task_name}"
 
     def adapt_sample_inputs(self, sample):
         data_nt = sample['data']
@@ -313,68 +273,68 @@ class Cifar10Cnn(TunableModel):
 
 
 CIFAR10_RELAY_MODEL = """
-    v0.0.4
-    def @main({param_args}) {{
-        %0 = cast(cast(%data, "int16") - cast(%mean_data, "int16"), "int8");
-        %1 = nn.conv2d(
-             %0,
-             %conv0_weight,
-             padding=[2, 2],
-             channels=32,
-             kernel_size=[5, 5],
-             data_layout="{data_layout}",
-             kernel_layout="{kernel_layouts[0]}",
-             out_dtype="int32");
-      %2 = nn.bias_add(%1, cast(%conv0_bias, "int32"), axis={bias_add_axis});
-      %3 = right_shift(%2, 9);
-      %4 = cast(%3, "int8");
-      %5 = nn.max_pool2d(%4,
-             pool_size=[3, 3],
-             strides=[2, 2],
-             layout="{data_layout}",
-             ceil_mode=True);
-      %6 = cast(nn.relu(cast(%5, "int16")), "int8");
-      %7 = nn.conv2d(
-             %6,
-             %conv1_weight,
-             padding=[2, 2],
-             channels=32,
-             kernel_size=[5, 5],
-             data_layout="{data_layout}",
-             kernel_layout="{kernel_layouts[1]}",
-             out_dtype="int32");
-      %8 = nn.bias_add(cast(%7, "int16"), cast(%conv1_bias, "int16"), axis={bias_add_axis});
-      %9 = right_shift(cast(%8, "int32"), 9);
-      %10 = cast(%9, "int8");
-      %11 = cast(nn.relu(cast(%10, "int16")), "int16");
-      %12 = nn.avg_pool2d(cast(%11, "int32"),
-              pool_size=[3, 3],
-              strides=[2, 2],
-              count_include_pad=True,
-              layout="{data_layout}",
-              ceil_mode=True);
-      %13 = nn.conv2d(cast(%12, "int8"),
-              %conv2_weight,
-              padding=[2, 2],
-              channels=64,
-              kernel_size=[5, 5],
-              data_layout="{data_layout}",
-              kernel_layout="{kernel_layouts[2]}",
-              out_dtype="int32");
-      %14 = nn.bias_add(cast(%13, "int16"), cast(%conv2_bias, "int16"), axis={bias_add_axis});
-      %15 = right_shift(cast(%14, "int32"), 9);
-      %16 = cast(%15, "int8");
-      %17 = cast(nn.relu(%16), "int16");
-      %18 = nn.avg_pool2d(cast(%17, "int32"),
-              pool_size=[3, 3],
-              strides=[2, 2],
-              count_include_pad=True,
-              layout="{data_layout}",
-              ceil_mode=True);
-      %19 = nn.batch_flatten(cast(%18, "int16"));
-      %20 = nn.dense(cast(%19, "int16"), %dense0_weight, units=10, out_dtype="int16");
-      %21 = nn.bias_add(%20, cast(left_shift(cast(%dense0_bias, "int32"), 3), "int16"), axis=-1);
-      %22 = right_shift(cast(%21, "int32"), 5);
-      cast(%22, "int8")
-    }}
+#[version = "0.0.5"]
+def @main({param_args}) {{
+    %0 = cast(cast(%data, dtype="int16") - cast(%mean_data, dtype="int16"), dtype="int8");
+    %1 = nn.conv2d(
+         %0,
+         %conv0_weight,
+         padding=[2, 2],
+         channels=32,
+         kernel_size=[5, 5],
+         data_layout="{data_layout}",
+         kernel_layout="{kernel_layouts[0]}",
+         out_dtype="int32");
+  %2 = nn.bias_add(%1, cast(%conv0_bias, dtype="int32"), axis={bias_add_axis});
+  %3 = right_shift(%2, 9);
+  %4 = cast(%3, dtype="int8");
+  %5 = nn.max_pool2d(%4,
+         pool_size=[3, 3],
+         strides=[2, 2],
+         layout="{data_layout}",
+         ceil_mode=True);
+  %6 = cast(nn.relu(cast(%5, dtype="int16")), dtype="int8");
+  %7 = nn.conv2d(
+         %6,
+         %conv1_weight,
+         padding=[2, 2],
+         channels=32,
+         kernel_size=[5, 5],
+         data_layout="{data_layout}",
+         kernel_layout="{kernel_layouts[1]}",
+         out_dtype="int32");
+  %8 = nn.bias_add(cast(%7, dtype="int16"), cast(%conv1_bias, dtype="int16"), axis={bias_add_axis});
+  %9 = right_shift(cast(%8, dtype="int32"), 9);
+  %10 = cast(%9, dtype="int8");
+  %11 = cast(nn.relu(cast(%10, dtype="int16")), dtype="int16");
+  %12 = nn.avg_pool2d(cast(%11, dtype="int32"),
+          pool_size=[3, 3],
+          strides=[2, 2],
+          count_include_pad=True,
+          layout="{data_layout}",
+          ceil_mode=True);
+  %13 = nn.conv2d(cast(%12, dtype="int8"),
+          %conv2_weight,
+          padding=[2, 2],
+          channels=64,
+          kernel_size=[5, 5],
+          data_layout="{data_layout}",
+          kernel_layout="{kernel_layouts[2]}",
+          out_dtype="int32");
+  %14 = nn.bias_add(cast(%13, dtype="int16"), cast(%conv2_bias, dtype="int16"), axis={bias_add_axis});
+  %15 = right_shift(cast(%14, dtype="int32"), 9);
+  %16 = cast(%15, dtype="int8");
+  %17 = cast(nn.relu(%16), dtype="int16");
+  %18 = nn.avg_pool2d(cast(%17, dtype="int32"),
+          pool_size=[3, 3],
+          strides=[2, 2],
+          count_include_pad=True,
+          layout="{data_layout}",
+          ceil_mode=True);
+  %19 = nn.batch_flatten(cast(%18, dtype="int16"));
+  %20 = nn.dense(cast(%19, dtype="int16"), %dense0_weight, units=10, out_dtype="int16");
+  %21 = nn.bias_add(%20, cast(left_shift(cast(%dense0_bias, dtype="int32"), 3), dtype="int16"), axis=-1);
+  %22 = right_shift(cast(%21, dtype="int32"), 5);
+  cast(%22, dtype="int8")
+}}
 """

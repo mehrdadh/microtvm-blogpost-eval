@@ -2,7 +2,6 @@ import collections
 import logging
 
 import tvm.micro
-from tvm.micro.device import MemConstraint
 
 from micro_eval import util
 from micro_eval.util import mock_c_mod
@@ -67,7 +66,7 @@ class CmsisCifar10Cnn(TunableModel):
     def get_config_str(self):
       return f'cmsis_cifar10_{self.impl}'
 
-    def lower_model(self, compiled_model, dev_config):
+    def lower_model(self, compiled_model):
       assert self.ctx_str == 'micro_dev', 'Only runnable on micro_dev'
       _LOG.info('Building C module and programming on device...')
       micro_mod = tvm.micro.create_micro_mod(
@@ -97,16 +96,3 @@ class CmsisCifar10Cnn(TunableModel):
 
     def adapt_model_outputs(self, outputs):
         return {'label': outputs['label'][0]}
-
-    def section_constraints(self):
-      return collections.OrderedDict([
-        ('text', (45000, MemConstraint.ABSOLUTE_BYTES)),
-        ('rodata', (4096, MemConstraint.ABSOLUTE_BYTES)),
-        ('data', (100000, MemConstraint.ABSOLUTE_BYTES)),
-        ('bss', (1320, MemConstraint.ABSOLUTE_BYTES)),
-        ('args', (4096, MemConstraint.ABSOLUTE_BYTES)),
-        ('heap', (100.0, MemConstraint.WEIGHT)),
-        ('workspace', (130000, MemConstraint.ABSOLUTE_BYTES)),
-        # NOTE we need a deeper stack: since CMSIS makes deep func calls
-        ('stack', (1024, MemConstraint.ABSOLUTE_BYTES)),
-      ])
