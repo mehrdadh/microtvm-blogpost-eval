@@ -176,6 +176,22 @@ INFO eval.py:189 got prediction after 135.856 ms: {'label': array([ -44, -128, -
 ...
 ```
 
+## Running standalone
+
+You can also run the Relay CIFAR10 model standalone on-device. First, translate the model into C in the standalone project:
+
+```bash
+$ python -m micro_eval.bin.standalone generate
+```
+
+Now, flash the project onto the device using _Zephyr_ commands:
+
+```bash
+$ cd standalone
+$ west build -b <your_board>
+$ west flash
+```
+
 ## Running autotuning
 
 __NOTE__: Autotuning takes a while on hardware--the above result was achieved by running autotuning for
