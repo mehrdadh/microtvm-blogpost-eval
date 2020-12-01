@@ -27,11 +27,13 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
 2. Clone the TVM repo: `git clone --recursive https://github.com/apache/tvm tvm`
 3. (A temporary step) Patch [PR 6948](https://github.com/apache/tvm/pull/6948) and
    [PR 7001](https://github.com/apache/tvm/pull/7001):
+   ```bash
    $ git fetch origin/main
    $ git fetch https://github.com/areusch/incubator-tvm.git utvm-custom-malloc  # PR 6948
    $ git cherry-pick origin/main..FETCH_HEAD
    $ git fetch https://github.com/areusch/incubator-tvm.git reference-vm-build  # PR 7001
    $ git cherry-pick origin/main..FETCH_HEAD
+   ```
 
 3. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
  * __NOTE__: Use this `vagrant up` command instead of the one given there:
@@ -61,7 +63,9 @@ This process is captured in the Jupyter notebook in `tutorial/standalone_utvm.ip
 1. (If running on the Reference VM) In the `tvm` repo, edit `apps/microtvm/reference-vm/zephyr/Vagrantfile`
    and add a line as follows:
 
-   config.vm.network "forwarded_port", guest: 8090, host: 8090
+    ```
+    config.vm.network "forwarded_port", guest: 8090, host: 8090
+    ```
 
 2. Bounce the VM:
 
