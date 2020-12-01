@@ -287,17 +287,7 @@ void main(void) {
   /* Claim console device */
   tvm_uart = device_get_binding(DT_LABEL(DT_CHOSEN(zephyr_console)));
   const struct device* shadow_tvm_uart = tvm_uart;
-  /* struct uart_config config; */
-  /* config.baudrate = 115200; */
-  /* config.parity = UART_CFG_PARITY_NONE; */
-  /* config.stop_bits = UART_CFG_STOP_BITS_1; */
-  /* config.data_bits = UART_CFG_DATA_BITS_8; */
-  /* config.flow_ctrl = UART_CFG_FLOW_CTRL_NONE; */
-  /* if (uart_configure(tvm_uart, &config) != 0) { */
-  /*   for(;;) ; */
-  /* } */
   uart_rx_init(&uart_rx_buf, tvm_uart);
-//  __stdout_hook_install(&write_hook);
 
   utvm_rpc_server_t server = UTvmRpcServerInit(write_serial, NULL);
   TVMLogf("uTVM On-Device Runtime");
@@ -314,13 +304,9 @@ void main(void) {
           TVMPlatformAbort(err);
         }
        if (g_num_bytes_written != 0 || g_num_bytes_requested != 0) {
-          TVMLogf("WR: %d / %d", g_num_bytes_written, g_num_bytes_requested);
           if (g_num_bytes_written != g_num_bytes_requested) {
             TVMPlatformAbort((tvm_crt_error_t) 0xbeef3);
           }
-//          if (shadow_tvm_uart != tvm_uart) {
-//            TVMPlatformAbort((tvm_crt_error_t) 0xbeef4);
-//          }
           g_num_bytes_written = 0;
           g_num_bytes_requested = 0;
         }

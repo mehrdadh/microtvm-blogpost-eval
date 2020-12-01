@@ -4,7 +4,9 @@ import contextlib
 import datetime
 import json
 import logging
+import re
 import os
+import time
 import signal
 import subprocess
 import sys
@@ -142,9 +144,19 @@ MICRO_WORKSPACE = None
 def get_micro_workspace():
     global MICRO_WORKSPACE
     if MICRO_WORKSPACE is None:
-        MICRO_WORKSPACE = tvm.micro.Workspace(debug=True)
+        workspace_root = (
+            f'{util.get_repo_root()}/workspace/builds/{datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")}'
+        )
+        workspace_parent = os.path.dirname(workspace_root)
+        if not os.path.exists(workspace_parent):
+            os.makedirs(workspace_parent)
+        MICRO_WORKSPACE = tvm.micro.Workspace(debug=True, root=workspace_root)
 
     return MICRO_WORKSPACE
+
+
+def get_latest_symlink(config):
+    return f'{util.get_repo_root()}/workspace/{re.sub("[^A-Za-z0-9-]", "-", os.path.basename(config.config_file_path or "_no-config_"))}'
 
 
 @contextlib.contextmanager
@@ -154,6 +166,9 @@ def connect_debug_shell(*args):
     del session
 
 
+MICRO_BINARY_FILENAME = 'build.micro-binary'
+
+
 def eval_micro_dev(args, model_inst, compiled_model, samples):
     opts = model_inst.get_micro_compiler_opts()
     opts['lib_opts']['cmake_args'] = ['-DCMAKE_VERBOSE_MAKEFILE=1']
@@ -161,10 +176,29 @@ def eval_micro_dev(args, model_inst, compiled_model, samples):
     compiler = zephyr.ZephyrCompiler(util.get_zephyr_project_root(),
                                      board=args.zephyr_board,
                                      zephyr_toolchain_variant='zephyr')
-    lowered = model_inst.lower_model(compiled_model)
-    print('lowered', lowered.lib)
-    micro_bin = tvm.micro.build_static_runtime(
-        get_micro_workspace(), compiler, lowered.lib, **opts)
+
+    latest_symlink = get_latest_symlink(model_inst.config)
+    micro_bin_path = os.path.join(latest_symlink, MICRO_BINARY_FILENAME)
+    graph_json_path = os.path.join(latest_symlink, 'graph.json')
+    if args.skip_micro_build:
+        micro_bin = tvm.micro.MicroBinary.unarchive(micro_bin_path, get_micro_workspace().relpath('unarchive-micro-binary'))
+        with open(graph_json_path) as json_f:
+            graph_json_str = json_f.read()
+
+    else:
+        lowered = model_inst.lower_model(compiled_model)
+        print('lowered', lowered.lib)
+
+        micro_bin = tvm.micro.build_static_runtime(
+            get_micro_workspace(), compiler, lowered.lib, **opts)
+        if os.path.lexists(latest_symlink):
+            os.unlink(latest_symlink)
+        os.symlink(os.path.relpath(get_micro_workspace().tempdir.temp_dir, os.path.dirname(latest_symlink)),
+                   latest_symlink)
+        micro_bin.archive(micro_bin_path, metadata_only=True)
+        with open(graph_json_path, 'w') as json_f:
+            json_f.write(lowered.get_json())
+        graph_json_str = lowered.get_json()
 
     with contextlib.ExitStack() as with_stack:
         debug_session = None
@@ -178,28 +212,28 @@ def eval_micro_dev(args, model_inst, compiled_model, samples):
 
         _LOG.debug('[Executing]')
         ctx = sess.context
-        print('JSON!!!')
-        print(lowered.get_json())
-        print('END JSON!!!')
         if args.use_debug_runtime:
-            mod = tvm.micro.create_local_debug_runtime(
-                lowered.get_json(), sess.get_system_lib(), ctx,
+            mod = tvm.micro.session.create_local_debug_runtime(
+                graph_json_str, sess.get_system_lib(), ctx,
+#                1, 1, 1,
                 dump_root=f'{util.get_repo_root()}/debug/micro')
         else:
             mod = tvm.micro.create_local_graph_runtime(
-                lowered.get_json(), sess.get_system_lib(), ctx)
+                graph_json_str, sess.get_system_lib(), ctx)
 
-#        total_bytes = 0
-#        for k, v in lowered.params.items():
-#            num_bytes = np.prod(v.shape) * 4
-#            _LOG.info('input %s (%r): %d bytes', k, v.shape, num_bytes)
-#            total_bytes += num_bytes
+        target_str = str(model_inst.target)
+        if '-link-params=0' in target_str or '-link-params' not in target_str:
+            total_bytes = 0
+            for k, v in lowered.params.items():
+                num_bytes = np.prod(v.shape) * 4
+                _LOG.debug('input %s (%r): %d bytes', k, v.shape, num_bytes)
+                total_bytes += num_bytes
 
-#        _LOG.info("total bytes: %d", total_bytes)
+            _LOG.info("total parameter bytes to set: %d", total_bytes)
 
-#        for k, v in lowered.params.items():
-#            _LOG.info('set input %s', k)
-#            mod.set_input(k, v)
+            for k, v in lowered.params.items():
+                _LOG.debug('set param %s', k)
+                mod.set_input(k, v)
 
         results = []
         for i, sample in enumerate(samples):
@@ -207,18 +241,17 @@ def eval_micro_dev(args, model_inst, compiled_model, samples):
                 model_inst, sample,
                 compiled_model.ir_mod[compiled_model.entry_point])
 
-            print('SET INPUT')
+            _LOG.debug('Setting model input')
             mod.set_input(**inputs)
-            print('SYNC')
+            _LOG.debug('ctx sync()')
             ctx.sync()  # Ensure all args have been pushed to the device.
-            print('RUN')
+            _LOG.debug('run inference')
             mod.run()
-            print('SYNC')
+            _LOG.debug('ctx sync()')
             ctx.sync()   # This actually executes the on-device task queue.
-            print('SET OUTPUT')
+            _LOG.debug('Retrieving model output')
             results.append(adapt_all_outputs(model_inst, mod, sample))
-            exec_time_ms = 100
-            _LOG.info('got prediction after %.3f ms: %r', exec_time_ms, results[-1])
+            _LOG.info('got prediction: %r', results[-1])
 
     return results
 
@@ -296,6 +329,10 @@ def parse_args():
                         help=('When executing on micro_dev, launch GDB to complete execution. You '
                               'are expected to step the program through until the UTVMDone '
                               'breakpoint is reached.'))
+    parser.add_argument('--skip-micro-build', action='store_true',
+                        help=("When specified, use the previously-built micro project stored in "
+                              "the 'workspace' directory. You must have built with the specified "
+                              "configuration once before doing this. Does no dependency checking."))
 
     parser.add_argument('--validate-against', const='cpu', nargs='?',
                         help='Validate on-device output against the given runtime (by default, cpu)')

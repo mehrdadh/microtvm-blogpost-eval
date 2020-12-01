@@ -280,7 +280,7 @@ def instantiate_from_spec(spec : str) -> typing.Tuple[CompiledModel, str]:
   except ImportError as err:
     raise ModelInstantiationError(f'Could not import {__name__}.{model_name}') from err
 
-  model_config = config_util.Config(util.get_repo_root(), {})
+  model_config = config_util.Config(None, util.get_repo_root(), {})
   if config_path:
     try:
       model_config = config_util.Config.load(config_path)
