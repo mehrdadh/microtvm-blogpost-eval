@@ -1,5 +1,7 @@
 ![microTVM logo](logo.png)
 
+**NOTE**: Looking for the repo referenced from the original [microTVM blog post](https://tvm.apache.org/2020/06/04/tinyml-how-tvm-is-taming-tiny)? Check out the archived [`experimental-blogpost`](https://github.com/areusch/microtvm-blogpost-eval/tree/experimental-blogpost) branch.
+
 MicroTVM is an effort to run TVM on bare-metal microcontrollers. You can read more about the current
 design in the original [Standalone microTVM Roadmap](https://discuss.tvm.apache.org/t/rfc-tvm-standalone-tvm-roadmap/6987).
 This repo shows you how to run CIFAR10-CNN on the host machine and on an [STM Nucleo-F746ZG development board](
