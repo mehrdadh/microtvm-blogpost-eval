@@ -36,9 +36,11 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
    ```
 
 3. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
- * __NOTE__: Use this `vagrant up` command instead of the one given there:
+** __NOTE__: Use this `vagrant up` command instead of the one given there:
 
-     $ TVM_PROJECT_DIR=path/to/microtvm-blogpost-eval vagrant up --provider=<provider>
+    ```bash
+    $ TVM_PROJECT_DIR=path/to/microtvm-blogpost-eval vagrant up --provider=<provider>
+    ```
 
 4. Attach the USB device to the Reference VM.
 
