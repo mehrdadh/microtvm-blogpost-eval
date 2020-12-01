@@ -55,14 +55,6 @@ int write_hook(int c) {
   return 0;
 }
 
-/* ssize_t write_serial(void* unused_context, const uint8_t* data, size_t size) { */
-/*   for (size_t i = 0; i < size; i++) { */
-/*     uart_poll_out(tvm_uart, data[i]); */
-/*   } */
-
-/*   return size; */
-/* } */
-
 size_t TVMPlatformFormatMessage(char* out_buf, size_t out_buf_size_bytes, const char* fmt,
                                 va_list args) {
   return vsnprintk(out_buf, out_buf_size_bytes, fmt, args);
@@ -76,18 +68,6 @@ void TVMPlatformAbort(tvm_crt_error_t error) {
 }
 
 int mem_pool_counts[10] = {0};
-
-/* K_HEAP_DEFINE(tvm_heap, 200 * 1024); */
-
-/* tvm_crt_error_t TVMPlatformMemoryAllocate(size_t num_bytes, DLContext ctx, void** out_ptr) { */
-/*   *out_ptr = k_heap_alloc(&tvm_heap, num_bytes, K_NO_WAIT); */
-/*   return (*out_ptr == NULL) ? kTvmErrorPlatformNoMemory : kTvmErrorNoError; */
-/* } */
-
-/* tvm_crt_error_t TVMPlatformMemoryFree(void* ptr, DLContext ctx) { */
-/*   k_heap_free(&tvm_heap, ptr); */
-/*   return kTvmErrorNoError; */
-/* } */
 
 K_MEM_POOL_DEFINE(small_memory_pool, 16, 16, (90 * 1024 / 16), 4);
 
@@ -194,10 +174,6 @@ TVMModuleHandle TVMArgs_AsModuleHandle(const TVMArgs* args, size_t index);
 
 extern void __stdout_hook_install(int (*hook)(int));
 void main(void) {
-  /* Claim console device */
-//  tvm_uart = device_get_binding(DT_LABEL(DT_CHOSEN(zephyr_console)));
-//  uart_rx_init(&uart_rx_buf, tvm_uart);
-//  __stdout_hook_install(&write_hook);
   printk("uTVM Standalone Demo\n");
 
   int64_t device_type = kDLCPU;
