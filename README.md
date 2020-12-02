@@ -19,7 +19,7 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
 ## Software you will need
 
 * A computer capable of running a VM hypervisor (VirtualBox or Parallels).
-* [Vagrant](https://www.vagrantup.com/)
+* [Vagrant](https://www.vagrantup.com/) (you will install this in step 4).
 
 ## Getting Started
 
