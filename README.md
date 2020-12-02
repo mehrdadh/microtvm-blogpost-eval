@@ -18,8 +18,8 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
 
 ## Software you will need
 
-* A recent version of Linux (TVM tests against Ubuntu 18.04).
-* Python 3.6+
+* A computer capable of running a VM hypervisor (VirtualBox or Parallels).
+* [Vagrant](https://www.vagrantup.com/)
 
 ## Getting Started
 
@@ -35,17 +35,21 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
    $ git cherry-pick origin/main..FETCH_HEAD
    ```
 
-3. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
+4. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
     * __NOTE__: Use this `vagrant up` command instead of the one given there:
 
         ```bash
         $ TVM_PROJECT_DIR=path/to/microtvm-blogpost-eval vagrant up --provider=<provider>
         ```
 
-4. Attach the USB device to the Reference VM.
+    Choose `virtualbox` or `parallels` for `<provider>`, depending which VM hypervisor is installed.
+    `vmware` support isn't available yet, but we're working on it.
+5. Install extra dependencies. SSH to the VM, then, in the `microtvm-blogpost-eval` directory, run:
+    ```bash
+    microtvm-blogpost-eval$ pip3 install -r requirements.txt
+    ```
 
-Choose `virtualbox` or `parallels` for `<provider>`, depending which VM hypervisor is installed.
-`vmware` support isn't available yet, but we're working on it.
+6. Attach the USB device to the Reference VM.
 
 ## Running host-driven
 
