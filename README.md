@@ -25,17 +25,7 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
 
 1. Clone this repository (use `git clone --recursive` to clone submodules).
 2. Clone the TVM repo: `git clone --recursive https://github.com/apache/tvm tvm`
-3. (A temporary step) Patch [PR 6948](https://github.com/apache/tvm/pull/6948) and
-   [PR 7001](https://github.com/apache/tvm/pull/7001):
-   ```bash
-   $ git fetch origin/main
-   $ git fetch https://github.com/areusch/incubator-tvm.git utvm-custom-malloc  # PR 6948
-   $ git cherry-pick origin/main..FETCH_HEAD
-   $ git fetch https://github.com/areusch/incubator-tvm.git reference-vm-build  # PR 7001
-   $ git cherry-pick origin/main..FETCH_HEAD
-   ```
-
-4. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
+3. Setup the [microTVM Reference VM](https://tvm.apache.org/docs/tutorials/micro/micro_reference_vm.html).
     * __NOTE__: Use this `vagrant up` command instead of the one given there:
 
         ```bash
@@ -44,12 +34,12 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
 
     Choose `virtualbox` or `parallels` for `<provider>`, depending which VM hypervisor is installed.
     `vmware` support isn't available yet, but we're working on it.
-5. Install extra dependencies. SSH to the VM, then, in the `microtvm-blogpost-eval` directory, run:
+4. Install extra dependencies. SSH to the VM, then, in the `microtvm-blogpost-eval` directory, run:
     ```bash
     microtvm-blogpost-eval$ pip3 install -r requirements.txt
     ```
 
-6. Attach the USB device to the Reference VM.
+5. Attach the USB device to the Reference VM.
 
 ## Running host-driven
 
