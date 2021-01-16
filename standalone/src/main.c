@@ -113,9 +113,11 @@ int g_utvm_timer_running = 0;
 static struct device* led_pin;
 #endif  // CONFIG_LED
 
-int TVMPlatformTimerStart() { return -1; }
+tvm_crt_error_t TVMPlatformTimerStart() { return kTvmErrorFunctionCallNotImplemented; }
 
-int TVMPlatformTimerStop(double* elapsed_time_seconds) { return -1; }
+tvm_crt_error_t TVMPlatformTimerStop(double* elapsed_time_seconds) {
+  return kTvmErrorFunctionCallNotImplemented;
+}
 
 #define RING_BUF_SIZE 512
 struct uart_rx_buf_t {

@@ -128,10 +128,10 @@ K_TIMER_DEFINE(g_utvm_timer, /* expiry func */ NULL, /* stop func */ NULL);
 
 int g_utvm_timer_running = 0;
 
-int TVMPlatformTimerStart() {
+tvm_crt_error_t TVMPlatformTimerStart() {
   if (g_utvm_timer_running) {
     TVMLogf("timer already running");
-    return -1;
+    return kTvmErrorSystemErrorMask | 1;
   }
 
 #ifdef CONFIG_LED
@@ -140,13 +140,13 @@ int TVMPlatformTimerStart() {
   k_timer_start(&g_utvm_timer, TIME_TIL_EXPIRY, TIME_TIL_EXPIRY);
   g_utvm_start_time = k_cycle_get_32();
   g_utvm_timer_running = 1;
-  return 0;
+  return kTvmErrorNoError;
 }
 
-int TVMPlatformTimerStop(double* res_us) {
+tvm_crt_error_t TVMPlatformTimerStop(double* res_us) {
   if (!g_utvm_timer_running) {
     TVMLogf("timer not running");
-    return -1;
+    return kTvmErrorSystemErrorMask | 2;
   }
 
   uint32_t stop_time = k_cycle_get_32();
@@ -172,7 +172,7 @@ int TVMPlatformTimerStop(double* res_us) {
   // check *after* stopping to prevent extra expiries on the happy path
   if (time_remaining_ms < 0) {
     TVMLogf("negative time remaining");
-    return -1;
+    return kTvmErrorSystemErrorMask | 3;
   }
   uint32_t num_expiries = k_timer_status_get(&g_utvm_timer);
   uint32_t timer_res_ms = ((num_expiries * MILLIS_TIL_EXPIRY) + time_remaining_ms);
@@ -187,7 +187,7 @@ int TVMPlatformTimerStop(double* res_us) {
   }
 
   g_utvm_timer_running = 0;
-  return 0;
+  return kTvmErrorNoError;
 }
 
 K_MEM_POOL_DEFINE(tvm_memory_pool, 64, 1024, 216, 4);

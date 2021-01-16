@@ -39,7 +39,13 @@ https://www.st.com/en/evaluation-tools/nucleo-f746zg.html).
     microtvm-blogpost-eval$ pip3 install -r requirements.txt
     ```
 
-5. Attach the USB device to the Reference VM.
+5. Setup PYTHONPATH (run from `microtvm-blogpost-eval`):
+
+    ```bash
+    $ export PYTHONPATH=$(pwd)/python
+    ```
+
+6. Attach the USB device to the Reference VM.
 
 ## Running host-driven
 
@@ -70,19 +76,26 @@ This process is captured in the Jupyter notebook in `tutorial/standalone_utvm.ip
     $ TVM_PROJECT_DIR=path/to/microtvm-blogpost-eval vagrant up
     ```
 
-3. Install jupyter: `$ pip3 install jupyter`
+3. SSH to the VM. Be sure to reset the PYTHONPATH:
 
-4. Launch the notebook. In this blogpost repo, run `$ python -mjupyter notebook --no-browser --port 8090 --ip=0.0.0.0`
+    ```bash
+    $ cd /path/to/microtvm-blogpost-eval
+    $ export PYTHONPATH=$(pwd)/python
+    ```
+
+4. Install jupyter: `$ pip3 install jupyter`
+
+5. Launch the notebook. In this blogpost repo, run `$ python -mjupyter notebook --no-browser --port 8090 --ip=0.0.0.0`
 
 Copy the `127.0.0.1` URL from your console to your browser. This should bring up Jupyter notebook--navigate to
-`tutorials/standalone_utvm.ipynb` and you should be set.
+`tutorial/standalone_utvm.ipynb` and you should be set.
 
 ## Running standalone
 
 You can also run the Relay CIFAR10 model standalone on-device. First, translate the model into C in the standalone project:
 
 ```bash
-$ python -m micro_eval.bin.standalone generate
+$ python -m micro_eval.bin.standalone cifar10_cnn:micro_dev:data/cifar10-config-validate.json
 ```
 
 Now, flash the project onto the device using _Zephyr_ commands:
@@ -91,6 +104,22 @@ Now, flash the project onto the device using _Zephyr_ commands:
 $ cd standalone
 $ west build -b <your_board>
 $ west flash
+```
+
+To view the model output, first run `miniterm`:
+
+```bash
+$ python -mserial.tools.miniterm /dev/ttyACM2 115200   # NOTE: replace ttyACM2 with your serial port
+--- Miniterm on /dev/ttyACM2  115200,8,N,1 ---
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
+```
+
+Now, reset the board and you should see:
+
+```bash
+*** Booting Zephyr OS build zephyr-v2.4.0  ***
+uTVM Standalone Demo
+TVM complete! Output: (varies depending on the model spec, but should match)
 ```
 
 ## Running autotuning
