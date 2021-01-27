@@ -104,10 +104,12 @@ ssize_t write_serial(void* unused_context, const uint8_t* data, size_t size) {
   return size;
 }
 
+#if 0  // XXX MDW - DO NOT SUBMIT
 void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf) {
   gpio_pin_set(led_pin, PIN, 1);
   for (;;) ;
 }
+#endif
 
 size_t TVMPlatformFormatMessage(char* out_buf, size_t out_buf_size_bytes,
                                 const char* fmt, va_list args) {

@@ -175,7 +175,8 @@ def eval_micro_dev(args, model_inst, compiled_model, samples):
     print('opts', opts['lib_opts']['include_dirs'])
     compiler = zephyr.ZephyrCompiler(util.get_zephyr_project_root(),
                                      board=args.zephyr_board,
-                                     zephyr_toolchain_variant='zephyr')
+                                     zephyr_toolchain_variant='zephyr',
+                                     west_cmd=args.west_cmd)
 
     latest_symlink = get_latest_symlink(model_inst.config)
     micro_bin_path = os.path.join(latest_symlink, MICRO_BINARY_FILENAME)
@@ -338,6 +339,7 @@ def parse_args():
                         help='Validate on-device output against the given runtime (by default, cpu)')
     parser.add_argument('--zephyr-board', default='nucleo_f746zg',
                         help='Name of the Zephyr board to use for micro_dev inference.')
+    parser.add_argument('--west-cmd', default='west', help='Path to `west` binary.')
     model_util.define_cifar10_conv_op_impl(parser)
     return parser.parse_args()
 
