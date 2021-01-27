@@ -34,6 +34,7 @@
 #include <tvm/runtime/crt/utvm_rpc_server.h>
 #include <unistd.h>
 #include <zephyr.h>
+#include <random/rand32.h>
 
 #ifdef CONFIG_ARCH_POSIX
 #include "posix_board_if.h"
@@ -319,4 +320,9 @@ void main(void) {
 #ifdef CONFIG_ARCH_POSIX
   posix_exit(0);
 #endif
+}
+
+tvm_crt_error_t TVMPlatformGenerateRandom(uint8_t* buffer, size_t num_bytes) {
+  sys_rand_get(buffer, num_bytes);
+  return kTvmErrorNoError;
 }
