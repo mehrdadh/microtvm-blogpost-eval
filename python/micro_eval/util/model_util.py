@@ -77,7 +77,7 @@ def build_relay_mod(cifar10_conv_op_impl, target, use_random_params=True):
 
 # Model/Data util
 def get_sample_points(n, data_layout='NHWC'):
-    """Grabs a single input/label pair from MNIST"""
+    """Grabs n samples of input/label pair from CIFAR10"""
     ctx = mxnet.cpu()
     # Load a random image from the test dataset
     sample_data = mxnet.gluon.data.DataLoader(
