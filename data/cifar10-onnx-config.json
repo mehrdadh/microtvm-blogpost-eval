@@ -1,0 +1,5 @@
+{
+    "quantization_num_samples": 1024,
+    "onnx_path": "data/cifar10.onnx",
+    "quantize": true
+}

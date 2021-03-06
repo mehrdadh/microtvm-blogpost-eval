@@ -297,7 +297,7 @@ def instantiate_from_spec(spec : str) -> typing.Tuple[CompiledModel, str]:
 
     if is_subclass and val != TunableModel:
       target_name, ctx_str = SETTING_TO_TARGET_AND_CONTEXT[setting]
-      target = tvm.target.create(target_name)
+      target = tvm.target.Target(target_name)
       try:
         return val(config=model_config, target=target, ctx_str=ctx_str), setting
       except Exception as err:

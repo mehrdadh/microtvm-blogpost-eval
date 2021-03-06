@@ -19,6 +19,7 @@ def generate_project(model_inst, work_tree):
     subdirs = ["include", "src"]
     crt_root = os.path.join(work_tree, "crt")
     print('gen', os.path.join(crt_root, "model.c"))
+    #TODO: fix this error
     lowered.lib.save(os.path.join(work_tree, "model.c"), fmt="cc")
     for subdir in subdirs:
       dest_dir = os.path.join(crt_root, subdir)
@@ -82,7 +83,6 @@ def main():
     args = parse_args()
     model_inst, _ = model.instantiate_from_spec(args.model_specs[0])
     generate_project(model_inst, args.project_dir)
-
 
 if __name__ == '__main__':
   main()
