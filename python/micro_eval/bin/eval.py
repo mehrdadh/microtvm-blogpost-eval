@@ -191,7 +191,7 @@ def eval_micro_dev(args, model_inst, compiled_model, samples):
         print('lowered', lowered.lib)
 
         micro_bin = tvm.micro.build_static_runtime(
-            get_micro_workspace(), compiler, lowered.lib, **opts)
+            get_micro_workspace(), compiler, lowered.lib, opts)
         if os.path.lexists(latest_symlink):
             os.unlink(latest_symlink)
         os.symlink(os.path.relpath(get_micro_workspace().tempdir.temp_dir, os.path.dirname(latest_symlink)),

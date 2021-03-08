@@ -6,7 +6,7 @@ find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
 project(microtvm_zephyr_runtime)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
-file(GLOB_RECURSE TVM_CRT_SOURCES model.c crt/*.c *.cc)
+file(GLOB_RECURSE TVM_CRT_SOURCES model.c imported_modules.c crt/*.c *.cc)
 target_sources(app PRIVATE src/main.c ${TVM_CRT_SOURCES})
 
 get_filename_component(CMSIS_5_PATH "${CMAKE_SOURCE_DIR}/../3rdparty/CMSIS_5" ABSOLUTE)

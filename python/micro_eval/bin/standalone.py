@@ -18,9 +18,13 @@ def generate_project(model_inst, work_tree):
     standalone_crt_dir = os.path.join(os.path.dirname(tvm._ffi.libinfo.find_lib_path()[0]), "standalone_crt")
     subdirs = ["include", "src"]
     crt_root = os.path.join(work_tree, "crt")
-    print('gen', os.path.join(crt_root, "model.c"))
-    #TODO: fix this error
-    lowered.lib.save(os.path.join(work_tree, "model.c"), fmt="cc")
+
+    lowered.lib.save(os.path.join(work_tree, "model.c"))
+    print('gen', os.path.join(work_tree, "model.c"))
+
+    lowered.lib.imported_modules[0].save(os.path.join(work_tree, "imported_modules.c"))
+    print('gen', os.path.join(work_tree, "imported_mods.c"))
+    
     for subdir in subdirs:
       dest_dir = os.path.join(crt_root, subdir)
       if os.path.exists(dest_dir):

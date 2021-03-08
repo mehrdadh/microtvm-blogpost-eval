@@ -24,7 +24,7 @@ def get_cifar10_samples(num_samples):
 class Cifar10ONNX(TunableModel):
     
     def _lower_micro_dev(self, compiled_model):
-        with tvm.transform.PassContext(opt_level=3):
+        with tvm.transform.PassContext(opt_level=3, config={'tir.disable_vectorize': True}):
             return tvm.relay.build(
                 compiled_model.ir_mod[compiled_model.entry_point], target=self.target,
                 params=compiled_model.params)
